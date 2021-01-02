@@ -100,7 +100,7 @@ namespace AutoMapper.Execution
                     isReadOnlyProperty = destinationCollectionType.GetProperty("IsReadOnly");
                 }
                 var destinationVariable = Variable(destinationCollectionType, "collectionDestination");
-                var clear = Call(destinationVariable, clearMethod);
+                var clear = Expression.Call(destinationVariable, clearMethod);
                 var isReadOnly = Expression.Property(destinationVariable, isReadOnlyProperty);
                 return Block(new[] {destinationVariable},
                     Assign(destinationVariable, ToType(destinationParameter, destinationCollectionType)),
@@ -124,17 +124,17 @@ namespace AutoMapper.Execution
         public static Expression ContextMap(in TypePair typePair, Expression sourceParameter, Expression destinationParameter, MemberMap memberMap)
         {
             var mapMethod = ContextMapMethod.MakeGenericMethod(typePair.SourceType, typePair.DestinationType);
-            return Call(ContextParameter, mapMethod, sourceParameter, destinationParameter, Constant(memberMap, typeof(MemberMap)));
+            return Expression.Call(ContextParameter, mapMethod, sourceParameter, destinationParameter, Constant(memberMap, typeof(MemberMap)));
         }
         public static Expression CheckContext(TypeMap typeMap)
         {
             if (typeMap.MaxDepth > 0 || typeMap.PreserveReferences)
             {
-                return Call(CheckContextMethod, ContextParameter);
+                return Expression.Call(CheckContextMethod, ContextParameter);
             }
             return null;
         }
-        public static Expression OverMaxDepth(TypeMap typeMap) => typeMap?.MaxDepth > 0 ? Call(ContextParameter, OverTypeDepthMethod, Constant(typeMap)) : null;
+        public static Expression OverMaxDepth(TypeMap typeMap) => typeMap?.MaxDepth > 0 ? Expression.Call(ContextParameter, OverTypeDepthMethod, Constant(typeMap)) : null;
         public static Expression NullSubstitute(this MemberMap memberMap, Expression sourceExpression) =>
             Coalesce(sourceExpression, ToType(Constant(memberMap.NullSubstitute), sourceExpression.Type));
         public static Expression ApplyTransformers(this MemberMap memberMap, Expression source)
@@ -168,9 +168,9 @@ namespace AutoMapper.Execution
                 target = member switch
                 {
                     PropertyInfo property => Expression.Property(target, property),
-                    MethodInfo { IsStatic: true } getter => Call(getter, target),
+                    MethodInfo { IsStatic: true } getter => Expression.Call(getter, target),
                     FieldInfo field => Field(target, field),
-                    MethodInfo getter => Call(target, getter),
+                    MethodInfo getter => Expression.Call(target, getter),
                     _ => throw new ArgumentOutOfRangeException(nameof(member), member, "Unexpected member.")
                 };
             }
@@ -244,12 +244,12 @@ namespace AutoMapper.Execution
                 return ForEachArrayItem(loopVar, collection, loopContent);
             }
             var getEnumerator = collection.Type.GetInheritedMethod("GetEnumerator");
-            var getEnumeratorCall = Call(collection, getEnumerator);
+            var getEnumeratorCall = Expression.Call(collection, getEnumerator);
             var enumeratorType = getEnumeratorCall.Type;
             var enumeratorVar = Variable(enumeratorType, "enumerator");
             var enumeratorAssign = Assign(enumeratorVar, getEnumeratorCall);
             var moveNext = enumeratorType.GetInheritedMethod("MoveNext");
-            var moveNextCall = Call(enumeratorVar, moveNext);
+            var moveNextCall = Expression.Call(enumeratorVar, moveNext);
             var breakLabel = Label("LoopBreak");
             var loop = Block(new[] { enumeratorVar, loopVar },
                 enumeratorAssign,
@@ -281,7 +281,9 @@ namespace AutoMapper.Execution
         }
         // Expression.Property(string) is inefficient because it does a case insensitive match
         public static MemberExpression Property(Expression target, string name) => Expression.Property(target, target.Type.GetProperty(name));
-        // Call(string) is inefficient because it does a case insensitive match
+        // Expression.Call(string) is inefficient because it does a case insensitive match
+        public static MethodCallExpression Call(Expression target, string name, params Expression[] arguments) =>
+            Expression.Call(target, target.Type.GetMethod(name), arguments); 
         public static Expression ToObject(this Expression expression) => ToType(expression, typeof(object));
         public static Expression ToType(Expression expression, Type type) => expression.Type == type ? expression : Convert(expression, type);
         public static Expression ReplaceParameters(this LambdaExpression initialLambda, params Expression[] newParameters) =>
@@ -343,7 +345,7 @@ namespace AutoMapper.Execution
             Expression disposeCall;
             if (typeof(IDisposable).IsAssignableFrom(disposable.Type))
             {
-                disposeCall = Call(disposable, DisposeMethod);
+                disposeCall = Expression.Call(disposable, DisposeMethod);
             }
             else
             {
@@ -353,7 +355,7 @@ namespace AutoMapper.Execution
                 }
                 var disposableVariable = Variable(typeof(IDisposable), "disposableVariable");
                 var assignDisposable = Assign(disposableVariable, TypeAs(disposable, typeof(IDisposable)));
-                disposeCall = Block(new[] { disposableVariable }, assignDisposable, IfNullElse(disposableVariable, Empty, Call(disposableVariable, DisposeMethod)));
+                disposeCall = Block(new[] { disposableVariable }, assignDisposable, IfNullElse(disposableVariable, Empty, Expression.Call(disposableVariable, DisposeMethod)));
             }
             return TryFinally(body, disposeCall);
         }

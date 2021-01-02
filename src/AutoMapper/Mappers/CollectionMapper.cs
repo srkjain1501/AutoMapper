@@ -159,24 +159,25 @@ namespace AutoMapper.Internal.Mappers
                     return Call(MapMultidimensionalMethod, sourceExpression, Constant(destinationElementType), ContextParameter);
                 }
                 var sourceType = sourceExpression.Type;
-                Type sourceElementType;
+                Type sourceElementType = null;
                 Expression createDestination;
                 var destination = Parameter(destinationType, "destinationArray");
                 if (sourceType.IsArray)
                 {
-                    sourceElementType = sourceType.GetElementType();
-                    createDestination = Assign(destination, NewArrayBounds(destinationElementType, ArrayLength(sourceExpression)));
-                    if (destinationElementType.IsAssignableFrom(sourceElementType) && configurationProvider.FindTypeMapFor(sourceElementType, destinationElementType) == null)
+                    var mapFromArray = MapFromArray();
+                    if (mapFromArray != null)
                     {
-                        return Block(new[] { destination },
-                            createDestination,
-                            Call(sourceExpression, CopyToMethod, destination, Zero),
-                            destination);
+                        return mapFromArray;
                     }
                 }
                 else
                 {
-                    sourceElementType = GetEnumerableElementType(sourceExpression.Type);
+                    var mapFromICollection = MapFromICollection();
+                    if (mapFromICollection != null)
+                    {
+                        return mapFromICollection;
+                    }
+                    sourceElementType ??= GetEnumerableElementType(sourceExpression.Type);
                     var count = Call(CountMethod.MakeGenericMethod(sourceElementType), sourceExpression);
                     createDestination = Assign(destination, NewArrayBounds(destinationElementType, count));
                 }
@@ -189,6 +190,36 @@ namespace AutoMapper.Internal.Mappers
                     Assign(indexParam, Zero),
                     ForEach(itemParam, sourceExpression, setItem),
                     destination);
+                Expression MapFromArray()
+                {
+                    sourceElementType = sourceType.GetElementType();
+                    createDestination = Assign(destination, NewArrayBounds(destinationElementType, ArrayLength(sourceExpression)));
+                    if (!destinationElementType.IsAssignableFrom(sourceElementType) || 
+                        configurationProvider.FindTypeMapFor(sourceElementType, destinationElementType) != null)
+                    {
+                        return null;
+                    }
+                    return Block(new[] { destination },
+                        createDestination,
+                        Call(sourceExpression, CopyToMethod, destination, Zero),
+                        destination);
+                }
+                Expression MapFromICollection()
+                {
+                    var collectionType = sourceType.GetICollectionType();
+                    if (collectionType == null || (sourceElementType = collectionType.GenericTypeArguments[0]) != destinationElementType ||
+                        configurationProvider.FindTypeMapFor(sourceElementType, destinationElementType) != null)
+                    {
+                        return null;
+                    }
+                    var sourceICollection = Variable(collectionType, "sourceICollection");
+                    var count = ExpressionBuilder.Property(sourceICollection, "Count");
+                    return Block(new[] { destination, sourceICollection },
+                        Assign(sourceICollection, ToType(sourceExpression, collectionType)),
+                        Assign(destination, NewArrayBounds(destinationElementType, count)),
+                        Call(sourceICollection, "CopyTo", destination, Zero),
+                        destination);
+                }
             }
         }
     }
